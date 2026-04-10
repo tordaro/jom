@@ -1,5 +1,4 @@
 import uuid
-import pytz
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.utils.timezone import datetime, make_aware
@@ -97,7 +96,7 @@ class ChargingHistoryViewTests(TestCase):
 
     def test_parse_zaptec_datetime_floating_point(self):
         datetime_string = "2022-01-01T00:00:00.00000+00:00"
-        expected_result = datetime(2022, 1, 1, tzinfo=pytz.utc)
+        expected_result = make_aware(datetime(2022, 1, 1, 1, 0, 0))
 
         result = zts.parse_zaptec_datetime(datetime_string)
 
@@ -105,7 +104,31 @@ class ChargingHistoryViewTests(TestCase):
 
     def test_parse_zaptec_datetime_not_floating_point(self):
         datetime_string = "2022-01-01T00:00:00+00:00"
-        expected_result = datetime(2022, 1, 1, tzinfo=pytz.utc)
+        expected_result = make_aware(datetime(2022, 1, 1, 1, 0, 0))
+
+        result = zts.parse_zaptec_datetime(datetime_string)
+
+        self.assertEqual(result, expected_result)
+
+    def test_parse_zaptec_datetime_without_timezone_treated_as_utc(self):
+        datetime_string = "2022-01-01T00:00:00"
+        expected_result = make_aware(datetime(2022, 1, 1, 1, 0, 0))
+
+        result = zts.parse_zaptec_datetime(datetime_string)
+
+        self.assertEqual(result, expected_result)
+
+    def test_parse_zaptec_datetime_dst_conversion(self):
+        datetime_string = "2022-07-01T00:00:00+00:00"
+        expected_result = make_aware(datetime(2022, 7, 1, 2, 0, 0))
+
+        result = zts.parse_zaptec_datetime(datetime_string)
+
+        self.assertEqual(result, expected_result)
+
+    def test_parse_zaptec_datetime_z_suffix(self):
+        datetime_string = "2022-01-01T00:00:00Z"
+        expected_result = make_aware(datetime(2022, 1, 1, 1, 0, 0))
 
         result = zts.parse_zaptec_datetime(datetime_string)
 

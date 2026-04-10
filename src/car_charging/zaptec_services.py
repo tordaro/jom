@@ -1,7 +1,7 @@
 import os
 import requests
-from datetime import datetime
-from django.utils.timezone import datetime, localtime
+from datetime import datetime, timezone
+from django.utils.timezone import localtime
 
 from car_charging.models import ChargingSession, EnergyDetails, ZaptecToken
 
@@ -61,23 +61,23 @@ def renew_token(username: str, password: str) -> ZaptecToken:
 
 
 def parse_zaptec_datetime(datetime_string: str) -> datetime:
-    if "." in datetime_string:
-        dt = datetime.strptime(datetime_string, "%Y-%m-%dT%H:%M:%S.%f%z")
-    else:
-        dt = datetime.strptime(datetime_string, "%Y-%m-%dT%H:%M:%S%z")
+    normalized_datetime = datetime_string.strip().replace("Z", "+00:00")
+    dt = datetime.fromisoformat(normalized_datetime)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
     return localtime(dt)
 
 
 def create_charging_sessions(api_data: list[dict]) -> list[ChargingSession]:
     """
     Create new ChargingSession and EnergyDetails objects from the given API data.
-    All timestamps are UTC+0, but the session timestamps are naive and the energy details are time aware.
+    All timestamps are normalized to the Django timezone before saving.
     """
     new_sessions = []
     for session_data in api_data:
         commit_end_date_time = session_data.get("CommitEndDateTime", None)
         if commit_end_date_time:
-            commit_end_date_time = parse_zaptec_datetime(commit_end_date_time + "+00:00")  # Naive UTC+0 datetime
+            commit_end_date_time = parse_zaptec_datetime(commit_end_date_time)
 
         session, is_created = ChargingSession.objects.get_or_create(
             session_id=session_data["Id"],
@@ -87,8 +87,8 @@ def create_charging_sessions(api_data: list[dict]) -> list[ChargingSession]:
                 "user_name": session_data.get("UserName", ""),
                 "user_email": session_data.get("UserEmail", ""),
                 "device_id": session_data["DeviceId"],
-                "start_date_time": parse_zaptec_datetime(session_data["StartDateTime"] + "+00:00"),  # Naive UTC+0 datetime
-                "end_date_time": parse_zaptec_datetime(session_data["EndDateTime"] + "+00:00"),  # Naive UTC+0 datetime
+                "start_date_time": parse_zaptec_datetime(session_data["StartDateTime"]),
+                "end_date_time": parse_zaptec_datetime(session_data["EndDateTime"]),
                 "energy": session_data["Energy"],
                 "commit_metadata": session_data.get("CommitMetadata", None),
                 "commit_end_date_time": commit_end_date_time,
@@ -107,7 +107,7 @@ def create_charging_sessions(api_data: list[dict]) -> list[ChargingSession]:
                 energy_detail = EnergyDetails.objects.create(
                     charging_session=session,
                     energy=detail_data["Energy"],
-                    timestamp=parse_zaptec_datetime(detail_data["Timestamp"]),  # Time aware UTC+0 datetime
+                    timestamp=parse_zaptec_datetime(detail_data["Timestamp"]),
                 )
 
     return new_sessions

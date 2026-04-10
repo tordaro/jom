@@ -1,4 +1,5 @@
 from decimal import Decimal
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -36,6 +37,26 @@ class CostDetails(models.Model):
 
     created_at = models.DateTimeField(_("Created At"), auto_now_add=True)
     updated_at = models.DateTimeField(_("Updated At"), auto_now=True)
+
+    def validate_required_prices(self) -> None:
+        missing_prices = []
+        if self.spot_price_id is None:
+            missing_prices.append("spot_price")
+        if self.grid_price_id is None:
+            missing_prices.append("grid_price")
+        if self.usage_price_id is None:
+            missing_prices.append("usage_price")
+        if self.spot_price_refund_id is None:
+            missing_prices.append("spot_price_refund")
+
+        if not missing_prices:
+            return
+
+        raise ValidationError(
+            "Missing required prices for CostDetails "
+            f"(energy_detail={self.energy_detail_id}, timestamp={self.energy_detail.timestamp}, "
+            f"price_area={self.energy_detail.charging_session.price_area}): {', '.join(missing_prices)}"
+        )
 
     def set_session_id(self) -> None:
         self.session_id = self.energy_detail.charging_session.id
@@ -88,6 +109,8 @@ class CostDetails(models.Model):
         self.set_energy()
         self.set_timestamp()
         self.set_price_area()
+        self.set_user()
+        self.validate_required_prices()
         self.set_spot_price_nok()
         self.set_grid_price_nok()
         self.set_usage_price_nok()
@@ -98,7 +121,6 @@ class CostDetails(models.Model):
         self.set_fund_cost()
         self.set_refund()
         self.set_total_cost()
-        self.set_user()
         super().save(*args, **kwargs)
 
     def __str__(self) -> str:

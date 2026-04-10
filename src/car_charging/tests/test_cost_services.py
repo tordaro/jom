@@ -1,7 +1,9 @@
 import uuid
-from django.utils.timezone import datetime, make_aware
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 from decimal import Decimal
+from django.utils.timezone import datetime, make_aware
+
 from car_charging.cost_services import create_cost_details
 from car_charging.models import EnergyDetails, GridPrice, SpotPrice, SpotPriceRefund, UsagePrice, CostDetails, ChargingSession
 
@@ -139,6 +141,58 @@ class CostServicesTestCase(TestCase):
 
         self.assertEqual(cost_details.spot_price, self.spot_price)
 
+    def test_date_range_filters_energy_details_and_keeps_effective_prices(self):
+        """Test that date filtering only affects energy rows, not the applicable dated prices."""
+        in_range_timestamp = make_aware(datetime(2025, 1, 10, 11))
+        out_of_range_timestamp = make_aware(datetime(2025, 1, 11, 11))
+
+        in_range_detail = EnergyDetails.objects.create(
+            charging_session=self.charging_session,
+            energy=Decimal("3.5"),
+            timestamp=in_range_timestamp,
+        )
+        out_of_range_detail = EnergyDetails.objects.create(
+            charging_session=self.charging_session,
+            energy=Decimal("4.5"),
+            timestamp=out_of_range_timestamp,
+        )
+        in_range_spot_price = SpotPrice.objects.create(
+            nok_pr_kwh=Decimal("1.10"),
+            start_time=in_range_timestamp,
+            price_area=4,
+        )
+        SpotPrice.objects.create(
+            nok_pr_kwh=Decimal("1.20"),
+            start_time=out_of_range_timestamp,
+            price_area=4,
+        )
+
+        create_cost_details(from_date=make_aware(datetime(2025, 1, 10)), to_date=make_aware(datetime(2025, 1, 11)))
+
+        self.assertFalse(CostDetails.objects.filter(energy_detail=self.energy_details).exists())
+        self.assertTrue(CostDetails.objects.filter(energy_detail=in_range_detail).exists())
+        self.assertFalse(CostDetails.objects.filter(energy_detail=out_of_range_detail).exists())
+
+        cost_details = CostDetails.objects.get(energy_detail=in_range_detail)
+        self.assertEqual(cost_details.spot_price, in_range_spot_price)
+        self.assertEqual(cost_details.grid_price, self.grid_price)
+        self.assertEqual(cost_details.usage_price, self.usage_price)
+        self.assertEqual(cost_details.spot_price_refund, self.spot_price_refund)
+
+    def test_rerun_updates_existing_cost_details(self):
+        """Test that rerunning the service recomputes an existing cost detail row."""
+        create_cost_details()
+
+        self.grid_price.day_fee = Decimal("0.60")
+        self.grid_price.save()
+
+        create_cost_details()
+
+        cost_details = CostDetails.objects.get(energy_detail=self.energy_details)
+
+        self.assertEqual(CostDetails.objects.count(), 1)
+        self.assertEqual(cost_details.grid_cost, self.energy_details.energy * Decimal("0.60"))
+
     def test_no_spot_price(self):
         """
         Test that the create_cost_details method throws an error if there is no corresponding spot price.
@@ -146,7 +200,7 @@ class CostServicesTestCase(TestCase):
         """
         self.spot_price.delete()
 
-        with self.assertRaises(Exception):
+        with self.assertRaisesMessage(ValidationError, "SpotPrice"):
             create_cost_details()
 
     def test_no_grid_price(self):
@@ -156,7 +210,7 @@ class CostServicesTestCase(TestCase):
         """
         self.grid_price.delete()
 
-        with self.assertRaises(Exception):
+        with self.assertRaisesMessage(ValidationError, "GridPrice"):
             create_cost_details()
 
     def test_no_usage_price(self):
@@ -166,7 +220,7 @@ class CostServicesTestCase(TestCase):
         """
         self.usage_price.delete()
 
-        with self.assertRaises(Exception):
+        with self.assertRaisesMessage(ValidationError, "UsagePrice"):
             create_cost_details()
 
     def test_no_spot_price_refund(self):
@@ -176,7 +230,7 @@ class CostServicesTestCase(TestCase):
         """
         self.spot_price_refund.delete()
 
-        with self.assertRaises(Exception):
+        with self.assertRaisesMessage(ValidationError, "SpotPriceRefund"):
             create_cost_details()
 
     def test_wrong_spot_price_area(self):
@@ -187,5 +241,5 @@ class CostServicesTestCase(TestCase):
         self.spot_price.price_area = 5
         self.spot_price.save()
 
-        with self.assertRaises(AttributeError):
+        with self.assertRaisesMessage(ValidationError, "SpotPrice"):
             create_cost_details()
