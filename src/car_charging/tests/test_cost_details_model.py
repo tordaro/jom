@@ -1,7 +1,9 @@
 import uuid
-from django.utils.timezone import datetime, make_aware
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 from decimal import Decimal
+from django.utils.timezone import datetime, make_aware
+
 from car_charging.models import EnergyDetails, GridPrice, SpotPrice, SpotPriceRefund, UsagePrice, CostDetails, ChargingSession
 
 
@@ -118,3 +120,51 @@ class CostDetailsTestCase(TestCase):
         total_cost = spot_cost + grid_cost + usage_cost + fund_cost - refund
 
         self.assertEqual(self.cost_details.total_cost, total_cost)
+
+    def test_save_raises_validation_error_when_spot_price_is_missing(self):
+        """Test that saving CostDetails without all required prices fails clearly."""
+        cost_details = CostDetails(
+            energy_detail=self.energy_details,
+            grid_price=self.grid_price,
+            usage_price=self.usage_price,
+            spot_price_refund=self.spot_price_refund,
+        )
+
+        with self.assertRaisesMessage(ValidationError, "spot_price"):
+            cost_details.save()
+
+    def test_clean_raises_field_errors_for_multiple_missing_prices(self):
+        """Test that clean reports each missing price on its own field."""
+        cost_details = CostDetails(
+            energy_detail=self.energy_details,
+            spot_price=self.spot_price,
+        )
+
+        with self.assertRaises(ValidationError) as context:
+            cost_details.clean()
+
+        self.assertEqual(
+            set(context.exception.message_dict),
+            {"grid_price", "usage_price", "spot_price_refund"},
+        )
+        self.assertIn(
+            f"energy_detail={self.energy_details.id}",
+            context.exception.message_dict["grid_price"][0],
+        )
+
+    def test_save_raises_validation_error_when_energy_detail_is_missing(self):
+        """Test that saving CostDetails without an EnergyDetails object fails clearly."""
+        cost_details = CostDetails(
+            spot_price=self.spot_price,
+            grid_price=self.grid_price,
+            usage_price=self.usage_price,
+            spot_price_refund=self.spot_price_refund,
+        )
+
+        with self.assertRaises(ValidationError) as context:
+            cost_details.save()
+
+        self.assertEqual(
+            context.exception.message_dict,
+            {"energy_detail": ["CostDetails requires an energy_detail before it can be calculated."]},
+        )

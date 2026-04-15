@@ -1,4 +1,6 @@
+from typing import Any, cast
 from decimal import Decimal
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -6,6 +8,8 @@ from car_charging.managers.cost_details_manager import CostDetailsManager
 
 
 class CostDetails(models.Model):
+    required_price_fields = ("spot_price", "grid_price", "usage_price", "spot_price_refund")
+
     objects = CostDetailsManager()
     energy_detail = models.OneToOneField("EnergyDetails", on_delete=models.CASCADE, primary_key=True)
     spot_price = models.ForeignKey("SpotPrice", on_delete=models.SET_NULL, null=True)
@@ -36,6 +40,54 @@ class CostDetails(models.Model):
 
     created_at = models.DateTimeField(_("Created At"), auto_now_add=True)
     updated_at = models.DateTimeField(_("Updated At"), auto_now=True)
+
+    def _validation_context(self) -> str:
+        if getattr(self, "energy_detail", None) is None:
+            return "energy_detail=<missing>"
+
+        return (
+            f"energy_detail={self.energy_detail_id}, "
+            f"timestamp={self.energy_detail.timestamp}, "
+            f"price_area={self.energy_detail.charging_session.price_area}"
+        )
+
+    def validate_energy_detail(self) -> None:
+        if getattr(self, "energy_detail", None) is None:
+            raise ValidationError({"energy_detail": "CostDetails requires an energy_detail before it can be calculated."})
+
+    def validate_required_prices(self) -> None:
+        validation_errors: dict[str, list[str]] = {}
+
+        for field_name in self.required_price_fields:
+            if getattr(self, f"{field_name}_id") is None:
+                validation_errors[field_name] = [f"Missing required price for {field_name} ({self._validation_context()})."]
+
+        if validation_errors:
+            raise ValidationError(cast(Any, validation_errors))
+
+    def clean(self) -> None:
+        super().clean()
+        self.validate_energy_detail()
+        self.validate_required_prices()
+
+    def populate_from_energy_detail(self) -> None:
+        self.set_session_id()
+        self.set_energy()
+        self.set_timestamp()
+        self.set_price_area()
+        self.set_user()
+
+    def calculate_costs(self) -> None:
+        self.set_spot_price_nok()
+        self.set_grid_price_nok()
+        self.set_usage_price_nok()
+        self.set_refund_price_nok()
+        self.set_spot_cost()
+        self.set_grid_cost()
+        self.set_usage_cost()
+        self.set_fund_cost()
+        self.set_refund()
+        self.set_total_cost()
 
     def set_session_id(self) -> None:
         self.session_id = self.energy_detail.charging_session.id
@@ -84,21 +136,10 @@ class CostDetails(models.Model):
         self.total_cost = self.grid_cost + self.spot_cost + self.usage_cost + self.fund_cost - self.refund
 
     def save(self, *args, **kwargs):
-        self.set_session_id()
-        self.set_energy()
-        self.set_timestamp()
-        self.set_price_area()
-        self.set_spot_price_nok()
-        self.set_grid_price_nok()
-        self.set_usage_price_nok()
-        self.set_refund_price_nok()
-        self.set_spot_cost()
-        self.set_grid_cost()
-        self.set_usage_cost()
-        self.set_fund_cost()
-        self.set_refund()
-        self.set_total_cost()
-        self.set_user()
+        self.validate_energy_detail()
+        self.populate_from_energy_detail()
+        self.clean()
+        self.calculate_costs()
         super().save(*args, **kwargs)
 
     def __str__(self) -> str:

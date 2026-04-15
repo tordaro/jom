@@ -1,12 +1,22 @@
 import os
 import requests
-from datetime import datetime
-from django.utils.timezone import datetime, localtime
+from datetime import datetime, timezone
+from django.utils.timezone import localtime
 
 from car_charging.models import ChargingSession, EnergyDetails, ZaptecToken
 
 
-def request_charge_history(access_token: str, installation_id: str, from_date: datetime, to_date: datetime) -> requests.Response:
+CHARGE_HISTORY_PAGE_SIZE = 100
+
+
+def request_charge_history(
+    access_token: str,
+    installation_id: str,
+    from_date: datetime,
+    to_date: datetime,
+    page_size: int = CHARGE_HISTORY_PAGE_SIZE,
+    page_index: int = 0,
+) -> requests.Response:
     """
     Request charge history from Zaptec API in given time interval.
     """
@@ -18,11 +28,27 @@ def request_charge_history(access_token: str, installation_id: str, from_date: d
         "DetailLevel": "1",
         "From": from_date.strftime(datetime_format),
         "To": to_date.strftime(datetime_format),
+        "PageSize": page_size,
+        "PageIndex": page_index,
     }
     headers = {"Authorization": f"Bearer {access_token}"}
 
     response = requests.get(endpoint_url, headers=headers, params=params)
     return response
+
+
+def _get_charge_history_page_data(response_data: dict) -> list[dict]:
+    page_data = response_data.get("data")
+    if page_data is None:
+        page_data = response_data.get("Data")
+    return page_data or []
+
+
+def _get_charge_history_pages(response_data: dict) -> int | None:
+    pages = response_data.get("pages")
+    if pages is None:
+        pages = response_data.get("Pages")
+    return pages
 
 
 def request_token(username: str, password: str) -> requests.Response:
@@ -46,6 +72,10 @@ class TokenRenewalException(Exception):
         return f"{self.message} - Status Code: {self.status_code}"
 
 
+class ChargeHistoryResponseException(Exception):
+    """Exception raised when Zaptec charge history responses are missing required fields."""
+
+
 def renew_token(username: str, password: str) -> ZaptecToken:
     response = request_token(username, password)
     if response.status_code != 200:
@@ -61,23 +91,30 @@ def renew_token(username: str, password: str) -> ZaptecToken:
 
 
 def parse_zaptec_datetime(datetime_string: str) -> datetime:
-    if "." in datetime_string:
-        dt = datetime.strptime(datetime_string, "%Y-%m-%dT%H:%M:%S.%f%z")
-    else:
-        dt = datetime.strptime(datetime_string, "%Y-%m-%dT%H:%M:%S%z")
+    """Parse a Zaptec timestamp into an aware datetime in the Django timezone.
+
+    Zaptec responses are inconsistent: timestamps may include an explicit UTC
+    offset, a trailing Z, fractional seconds, or no timezone information at
+    all. This project treats timestamps without timezone information as UTC and
+    then converts the result to the active Django timezone.
+    """
+    normalized_datetime = datetime_string.strip().replace("Z", "+00:00")
+    dt = datetime.fromisoformat(normalized_datetime)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
     return localtime(dt)
 
 
 def create_charging_sessions(api_data: list[dict]) -> list[ChargingSession]:
     """
     Create new ChargingSession and EnergyDetails objects from the given API data.
-    All timestamps are UTC+0, but the session timestamps are naive and the energy details are time aware.
+    All timestamps are normalized to the Django timezone before saving.
     """
     new_sessions = []
     for session_data in api_data:
         commit_end_date_time = session_data.get("CommitEndDateTime", None)
         if commit_end_date_time:
-            commit_end_date_time = parse_zaptec_datetime(commit_end_date_time + "+00:00")  # Naive UTC+0 datetime
+            commit_end_date_time = parse_zaptec_datetime(commit_end_date_time)
 
         session, is_created = ChargingSession.objects.get_or_create(
             session_id=session_data["Id"],
@@ -87,8 +124,8 @@ def create_charging_sessions(api_data: list[dict]) -> list[ChargingSession]:
                 "user_name": session_data.get("UserName", ""),
                 "user_email": session_data.get("UserEmail", ""),
                 "device_id": session_data["DeviceId"],
-                "start_date_time": parse_zaptec_datetime(session_data["StartDateTime"] + "+00:00"),  # Naive UTC+0 datetime
-                "end_date_time": parse_zaptec_datetime(session_data["EndDateTime"] + "+00:00"),  # Naive UTC+0 datetime
+                "start_date_time": parse_zaptec_datetime(session_data["StartDateTime"]),
+                "end_date_time": parse_zaptec_datetime(session_data["EndDateTime"]),
                 "energy": session_data["Energy"],
                 "commit_metadata": session_data.get("CommitMetadata", None),
                 "commit_end_date_time": commit_end_date_time,
@@ -104,10 +141,10 @@ def create_charging_sessions(api_data: list[dict]) -> list[ChargingSession]:
             energy_details = session_data["EnergyDetails"]
 
             for detail_data in energy_details:
-                energy_detail = EnergyDetails.objects.create(
+                EnergyDetails.objects.create(
                     charging_session=session,
                     energy=detail_data["Energy"],
-                    timestamp=parse_zaptec_datetime(detail_data["Timestamp"]),  # Time aware UTC+0 datetime
+                    timestamp=parse_zaptec_datetime(detail_data["Timestamp"]),
                 )
 
     return new_sessions
@@ -126,5 +163,31 @@ def get_charge_history_data(start_date: datetime, end_date: datetime) -> list[di
 
     access_token = zaptec_token.token
     installation_id = os.getenv("INSTALLATION_ID", "")
-    response = request_charge_history(access_token, installation_id, start_date, end_date)
-    return response.json()["Data"]
+    first_response = request_charge_history(
+        access_token,
+        installation_id,
+        start_date,
+        end_date,
+        page_size=CHARGE_HISTORY_PAGE_SIZE,
+        page_index=0,
+    )
+    first_response_data = first_response.json()
+    all_charge_history = _get_charge_history_page_data(first_response_data)
+
+    total_pages = _get_charge_history_pages(first_response_data)
+    if total_pages is None:
+        raise ChargeHistoryResponseException("Zaptec charge history response is missing the pages field")
+
+    for page_index in range(1, total_pages):
+        response = request_charge_history(
+            access_token,
+            installation_id,
+            start_date,
+            end_date,
+            page_size=CHARGE_HISTORY_PAGE_SIZE,
+            page_index=page_index,
+        )
+        response_data = response.json()
+        all_charge_history.extend(_get_charge_history_page_data(response_data))
+
+    return all_charge_history
