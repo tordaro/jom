@@ -61,6 +61,13 @@ def renew_token(username: str, password: str) -> ZaptecToken:
 
 
 def parse_zaptec_datetime(datetime_string: str) -> datetime:
+    """Parse a Zaptec timestamp into an aware datetime in the Django timezone.
+
+    Zaptec responses are inconsistent: timestamps may include an explicit UTC
+    offset, a trailing Z, fractional seconds, or no timezone information at
+    all. This project treats timestamps without timezone information as UTC and
+    then converts the result to the active Django timezone.
+    """
     normalized_datetime = datetime_string.strip().replace("Z", "+00:00")
     dt = datetime.fromisoformat(normalized_datetime)
     if dt.tzinfo is None:
