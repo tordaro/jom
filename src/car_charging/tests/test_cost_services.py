@@ -179,6 +179,55 @@ class CostServicesTestCase(TestCase):
         self.assertEqual(cost_details.usage_price, self.usage_price)
         self.assertEqual(cost_details.spot_price_refund, self.spot_price_refund)
 
+    def test_from_date_only_filters_out_older_energy_details(self):
+        """Test that an open-ended lower bound keeps only energy rows on or after from_date."""
+        earlier_detail = EnergyDetails.objects.create(
+            charging_session=self.charging_session,
+            energy=Decimal("2.5"),
+            timestamp=make_aware(datetime(2025, 1, 10, 10)),
+        )
+        later_timestamp = make_aware(datetime(2025, 1, 10, 11))
+        later_detail = EnergyDetails.objects.create(
+            charging_session=self.charging_session,
+            energy=Decimal("3.5"),
+            timestamp=later_timestamp,
+        )
+        later_spot_price = SpotPrice.objects.create(
+            nok_pr_kwh=Decimal("1.10"),
+            start_time=later_timestamp,
+            price_area=4,
+        )
+
+        create_cost_details(from_date=make_aware(datetime(2025, 1, 10, 11)))
+        cost_details = CostDetails.objects.get(energy_detail=later_detail)
+
+        self.assertFalse(CostDetails.objects.filter(energy_detail=earlier_detail).exists())
+        self.assertFalse(CostDetails.objects.filter(energy_detail=self.energy_details).exists())
+        self.assertTrue(CostDetails.objects.filter(energy_detail=later_detail).exists())
+        self.assertEqual(cost_details.spot_price, later_spot_price)
+        self.assertEqual(cost_details.grid_price, self.grid_price)
+        self.assertEqual(cost_details.usage_price, self.usage_price)
+        self.assertEqual(cost_details.spot_price_refund, self.spot_price_refund)
+
+    def test_to_date_only_filters_out_newer_energy_details(self):
+        """Test that an open-ended upper bound keeps only energy rows before to_date."""
+        later_timestamp = make_aware(datetime(2025, 1, 2, 10))
+        later_detail = EnergyDetails.objects.create(
+            charging_session=self.charging_session,
+            energy=Decimal("2.5"),
+            timestamp=later_timestamp,
+        )
+        SpotPrice.objects.create(
+            nok_pr_kwh=Decimal("1.05"),
+            start_time=later_timestamp,
+            price_area=4,
+        )
+
+        create_cost_details(to_date=make_aware(datetime(2025, 1, 2, 0, 0)))
+
+        self.assertTrue(CostDetails.objects.filter(energy_detail=self.energy_details).exists())
+        self.assertFalse(CostDetails.objects.filter(energy_detail=later_detail).exists())
+
     def test_rerun_updates_existing_cost_details(self):
         """Test that rerunning the service recomputes an existing cost detail row."""
         create_cost_details()

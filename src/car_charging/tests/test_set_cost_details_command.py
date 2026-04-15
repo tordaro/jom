@@ -7,6 +7,15 @@ from django.utils.timezone import datetime, make_aware
 
 class SetCostDetailsCommandTests(SimpleTestCase):
     @patch("car_charging.management.commands.set_cost_details.create_cost_details")
+    def test_command_accepts_no_dates(self, mock_create_cost_details):
+        call_command("set_cost_details")
+
+        mock_create_cost_details.assert_called_once_with(
+            from_date=None,
+            to_date=None,
+        )
+
+    @patch("car_charging.management.commands.set_cost_details.create_cost_details")
     def test_command_calls_service_with_inclusive_end_date(self, mock_create_cost_details):
         call_command("set_cost_details", "--start-date", "10-01-2025", "--end-date", "11-01-2025")
 
@@ -22,6 +31,15 @@ class SetCostDetailsCommandTests(SimpleTestCase):
         mock_create_cost_details.assert_called_once_with(
             from_date=make_aware(datetime(2025, 1, 10, 0, 0, 0)),
             to_date=None,
+        )
+
+    @patch("car_charging.management.commands.set_cost_details.create_cost_details")
+    def test_command_accepts_end_date_only(self, mock_create_cost_details):
+        call_command("set_cost_details", "--end-date", "11-01-2025")
+
+        mock_create_cost_details.assert_called_once_with(
+            from_date=None,
+            to_date=make_aware(datetime(2025, 1, 12, 0, 0, 0)),
         )
 
     def test_command_rejects_invalid_date_range(self):
