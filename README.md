@@ -1,4 +1,5 @@
 # Joint ownership manager
+
 The joint ownership manager (JOM) is a Django-based web application focused on managing parking and electric vehicle charging for a small joint ownership company. It offers basic yet essential functionalities to streamline parking space allocation and manage charging stations efficiently.
 
 ## Key Features
@@ -9,9 +10,11 @@ The joint ownership manager (JOM) is a Django-based web application focused on m
 - Owner Access: Basic profiles for owners to access and view pertinent information.
 
 ## Future Scope
+
 While initially focused on car management, the project is designed to accommodate future enhancements for broader ownership management tasks as the company's needs evolve.
 
 ## Gettings started locally
+
 Copy the tracked environment template:
 
 `cp dotenv .env`
@@ -27,28 +30,26 @@ The project is only guaranteed to work for Python >= 3.11, so check your version
 
 Use [pyenv](https://github.com/pyenv/pyenv#installation) to easily upgrade Python.
 
-Install [poetry](https://python-poetry.org/docs/#installing-with-pipx).
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
-Make a virtual environment and install all dependencies:
+Create the local virtual environment and install all dependencies, including the dev tools:
 
-`poetry install --with dev`
+`uv sync --group dev`
 
-Activate virtual environment in your shell:
+`uv` creates and manages `.venv` for the project automatically, so you can run Django commands through `uv run` without activating the environment manually.
 
-`poetry shell`
+You can now migrate your database:
 
-You can now navigate to the `src` folder and migrate your database,
-
-`python manage.py migrate`
+`uv run python src/manage.py migrate`
 
 Get full access by creating a super user:
 
-`python manage.py createsuperuser`
+`uv run python src/manage.py createsuperuser`
 
 Start the server:
 
-`python manage.py runserver`
+`uv run python src/manage.py runserver`
 
 Run the test suite:
 
-`python manage.py test`
+`uv run src/python manage.py test`
