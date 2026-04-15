@@ -12,18 +12,15 @@ The joint ownership manager (JOM) is a Django-based web application focused on m
 While initially focused on car management, the project is designed to accommodate future enhancements for broader ownership management tasks as the company's needs evolve.
 
 ## Gettings started locally
-Make a local Postgres container:
+Copy the tracked environment template:
 
-`docker run --name <name> -e POSTGRES_PASSWORD=<password> -p <port>:5432 -d postgres`
+`cp dotenv .env`
 
-Make a `.env` file with the following following environment variables must be defined:
-```
-POSTGRES_DB=postgres
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=<password>
-POSTGRES_HOST=localhost
-POSTGRES_PORT=<port>
-```
+Start a local Postgres container with the same defaults as the template file:
+
+`podman run --name jom-postgres -e POSTGRES_DB=postgres -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d postgres`
+
+The template also includes development defaults for `SECRET_KEY`, `DEBUG`, and `DJANGO_LOG_LEVEL`, plus empty Zaptec-related variables you can fill in later if needed.
 The project is only guaranteed to work for Python >= 3.11, so check your version:
 
 `python -V`
@@ -51,3 +48,7 @@ Get full access by creating a super user:
 Start the server:
 
 `python manage.py runserver`
+
+Run the test suite:
+
+`python manage.py test`
