@@ -1,6 +1,8 @@
 import uuid
+from types import SimpleNamespace
 from django.test import TestCase
 from django.utils.timezone import datetime, make_aware
+from unittest.mock import ANY, Mock, patch
 
 import car_charging.zaptec_services as zts
 
@@ -108,3 +110,73 @@ class ZaptecServicesTests(TestCase):
         result = zts.parse_zaptec_datetime(datetime_string)
 
         self.assertEqual(result, expected_result)
+
+    @patch("car_charging.zaptec_services.request_charge_history")
+    @patch("car_charging.zaptec_services.ZaptecToken.objects.first")
+    def test_get_charge_history_data_fetches_all_pages(self, mock_first_token, mock_request_charge_history):
+        start_date = make_aware(datetime(2025, 1, 1, 0, 0, 0))
+        end_date = make_aware(datetime(2025, 1, 2, 0, 0, 0))
+        mock_first_token.return_value = SimpleNamespace(token="test-token", is_token_expired=lambda: False)
+
+        first_response = Mock()
+        first_response.json.return_value = {"pages": 2, "data": [{"id": "first"}]}
+        second_response = Mock()
+        second_response.json.return_value = {"pages": 2, "data": [{"id": "second"}]}
+        mock_request_charge_history.side_effect = [first_response, second_response]
+
+        result = zts.get_charge_history_data(start_date, end_date)
+
+        self.assertEqual(result, [{"id": "first"}, {"id": "second"}])
+        self.assertEqual(mock_request_charge_history.call_count, 2)
+        mock_request_charge_history.assert_any_call(
+            "test-token",
+            ANY,
+            start_date,
+            end_date,
+            page_size=zts.CHARGE_HISTORY_PAGE_SIZE,
+            page_index=0,
+        )
+        mock_request_charge_history.assert_any_call(
+            "test-token",
+            ANY,
+            start_date,
+            end_date,
+            page_size=zts.CHARGE_HISTORY_PAGE_SIZE,
+            page_index=1,
+        )
+
+    @patch("car_charging.zaptec_services.request_charge_history")
+    @patch("car_charging.zaptec_services.ZaptecToken.objects.first")
+    def test_get_charge_history_data_accepts_uppercase_response_keys(self, mock_first_token, mock_request_charge_history):
+        start_date = make_aware(datetime(2025, 1, 1, 0, 0, 0))
+        end_date = make_aware(datetime(2025, 1, 2, 0, 0, 0))
+        mock_first_token.return_value = SimpleNamespace(token="test-token", is_token_expired=lambda: False)
+
+        response = Mock()
+        response.json.return_value = {"Pages": 1, "Data": [{"id": "first"}]}
+        mock_request_charge_history.return_value = response
+
+        result = zts.get_charge_history_data(start_date, end_date)
+
+        self.assertEqual(result, [{"id": "first"}])
+
+    @patch("car_charging.zaptec_services.request_charge_history")
+    @patch("car_charging.zaptec_services.ZaptecToken.objects.first")
+    def test_get_charge_history_data_raises_when_pages_field_is_missing(
+        self,
+        mock_first_token,
+        mock_request_charge_history,
+    ):
+        start_date = make_aware(datetime(2025, 1, 1, 0, 0, 0))
+        end_date = make_aware(datetime(2025, 1, 2, 0, 0, 0))
+        mock_first_token.return_value = SimpleNamespace(token="test-token", is_token_expired=lambda: False)
+
+        response = Mock()
+        response.json.return_value = {"data": [{"id": "first"}]}
+        mock_request_charge_history.return_value = response
+
+        with self.assertRaisesMessage(
+            zts.ChargeHistoryResponseException,
+            "Zaptec charge history response is missing the pages field",
+        ):
+            zts.get_charge_history_data(start_date, end_date)
