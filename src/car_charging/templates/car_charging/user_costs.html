@@ -18,6 +18,15 @@
                 <h1>Charging Analytics</h1>
                 <p>Monitor aggregated costs and history per user</p>
             </div>
+            <div class="global-filters">
+                <label for="global-year-filter" style="color: var(--clr-text-muted); font-size: 0.9rem; margin-right: 0.5rem;">Filter Year:</label>
+                <select id="global-year-filter" style="background: var(--clr-surface); color: white; border: 1px solid var(--clr-border); border-radius: 6px; padding: 0.4rem 0.8rem; font-family: inherit;">
+                    <option value="">All Time</option>
+                    {% for date_obj in available_years %}
+                        <option value="{{ date_obj.year }}">{{ date_obj.year }}</option>
+                    {% endfor %}
+                </select>
+            </div>
         </header>
 
         <!-- Main Workspace: Master-Detail -->

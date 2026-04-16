@@ -10,7 +10,8 @@ const elements = {
     historyTbody: document.getElementById('history-tbody'),
     historyHeader: document.getElementById('history-header'),
     monthlyAggregates: document.getElementById('monthly-aggregates-container'),
-    detailedStatsContainer: document.getElementById('detailed-stats-container')
+    detailedStatsContainer: document.getElementById('detailed-stats-container'),
+    yearFilter: document.getElementById('global-year-filter')
 };
 
 // Global State
@@ -20,9 +21,37 @@ let currentRawHistory = [];
 let currentMonthlyAggregates = [];
 let currentSelectedMonth = null;
 
+// Set up global year filter when DOM loads
+document.addEventListener('DOMContentLoaded', () => {
+    elements.yearFilter.addEventListener('change', () => {
+        // Reset currently selected user view since data changed globally
+        currentUserAggregates = null;
+        currentSelectedMonth = null;
+        elements.detailedStatsContainer.style.display = 'none';
+        elements.historyHeader.innerHTML = `
+            <h2>Charging History</h2>
+            <p class="subtitle">Select a user from the leaderboard</p>
+        `;
+        elements.monthlyAggregates.innerHTML = '';
+        elements.historyTbody.innerHTML = `
+            <tr class="empty-state-row">
+                <td colspan="8" class="empty-state">No user selected</td>
+            </tr>
+        `;
+        fetchUsersSummary();
+    });
+});
+
+function getYearQueryString() {
+    const year = elements.yearFilter.value;
+    return year ? `year=${year}` : '';
+}
+
 async function fetchUsersSummary() {
     try {
-        const response = await fetch('/charging/api/costs/summary');
+        const query = getYearQueryString();
+        const url = `/charging/api/costs/summary${query ? '?' + query : ''}`;
+        const response = await fetch(url);
         if (!response.ok) throw new Error('Failed to fetch summary');
         allUsersSummary = await response.json();
         renderUsers(allUsersSummary);
@@ -107,9 +136,11 @@ async function fetchUserHistory(userId) {
     elements.monthlyAggregates.innerHTML = ``;
     
     try {
+        const yearParam = getYearQueryString();
+        const queryStr = yearParam ? `&${yearParam}` : '';
         const [rawResponse, monthResponse] = await Promise.all([
-            fetch(`/charging/api/costs/history?user_id=${userId}`),
-            fetch(`/charging/api/costs/monthly_history?user_id=${userId}`)
+            fetch(`/charging/api/costs/history?user_id=${userId}${queryStr}`),
+            fetch(`/charging/api/costs/monthly_history?user_id=${userId}${queryStr}`)
         ]);
         
         if (!rawResponse.ok || !monthResponse.ok) throw new Error('Failed to fetch history');
