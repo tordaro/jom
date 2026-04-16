@@ -171,6 +171,7 @@ def get_charge_history_data(start_date: datetime, end_date: datetime) -> list[di
         page_size=CHARGE_HISTORY_PAGE_SIZE,
         page_index=0,
     )
+    first_response.raise_for_status()
     first_response_data = first_response.json()
     all_charge_history = _get_charge_history_page_data(first_response_data)
 
@@ -187,6 +188,7 @@ def get_charge_history_data(start_date: datetime, end_date: datetime) -> list[di
             page_size=CHARGE_HISTORY_PAGE_SIZE,
             page_index=page_index,
         )
+        response.raise_for_status()
         response_data = response.json()
         all_charge_history.extend(_get_charge_history_page_data(response_data))
 
