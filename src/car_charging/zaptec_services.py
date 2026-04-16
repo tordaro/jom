@@ -156,7 +156,6 @@ def get_charge_history_data(start_date: datetime, end_date: datetime) -> list[di
     """
     zaptec_token = ZaptecToken.objects.first()
     if not zaptec_token or zaptec_token.is_token_expired():
-        # TODO: Test this when zaptec_token is None
         username = os.getenv("ZAPTEC_USERNAME", "")
         password = os.getenv("ZAPTEC_PASSWORD", "")
         zaptec_token = renew_token(username, password)

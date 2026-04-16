@@ -160,6 +160,39 @@ class ZaptecServicesTests(TestCase):
 
         self.assertEqual(result, [{"id": "first"}])
 
+    @patch.dict("os.environ", {"ZAPTEC_USERNAME": "zaptec-user", "ZAPTEC_PASSWORD": "zaptec-pass"}, clear=False)
+    @patch("car_charging.zaptec_services.request_charge_history")
+    @patch("car_charging.zaptec_services.renew_token")
+    @patch("car_charging.zaptec_services.ZaptecToken.objects.first")
+    def test_get_charge_history_data_renews_token_when_missing(
+        self,
+        mock_first_token,
+        mock_renew_token,
+        mock_request_charge_history,
+    ):
+        start_date = make_aware(datetime(2025, 1, 1, 0, 0, 0))
+        end_date = make_aware(datetime(2025, 1, 2, 0, 0, 0))
+        mock_first_token.return_value = None
+        mock_renew_token.return_value = SimpleNamespace(token="renewed-token")
+
+        response = Mock()
+        response.json.return_value = {"pages": 1, "data": [{"id": "first"}]}
+        mock_request_charge_history.return_value = response
+
+        result = zts.get_charge_history_data(start_date, end_date)
+
+        self.assertEqual(result, [{"id": "first"}])
+        mock_renew_token.assert_called_once_with("zaptec-user", "zaptec-pass")
+        mock_request_charge_history.assert_called_once_with(
+            "renewed-token",
+            ANY,
+            start_date,
+            end_date,
+            page_size=zts.CHARGE_HISTORY_PAGE_SIZE,
+            page_index=0,
+        )
+        response.raise_for_status.assert_called_once_with()
+
     @patch("car_charging.zaptec_services.request_charge_history")
     @patch("car_charging.zaptec_services.ZaptecToken.objects.first")
     def test_get_charge_history_data_raises_when_pages_field_is_missing(
