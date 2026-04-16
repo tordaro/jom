@@ -1,0 +1,84 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Charging Costs</title>
+    <!-- Use Inter font for modern look -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'car_charging/css/user_costs.css' %}">
+</head>
+<body>
+    <div id="app-container">
+        <!-- Dashboard Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <h1>Charging Analytics</h1>
+                <p>Monitor aggregated costs and history per user</p>
+            </div>
+        </header>
+
+        <!-- Main Workspace: Master-Detail -->
+        <main class="dashboard-layout">
+            
+            <!-- Left Side: Users Summary (Master) -->
+            <section class="users-section glass-panel">
+                <div class="section-header">
+                    <h2>Total Aggregated Costs</h2>
+                    <p class="subtitle">Select a user to view history</p>
+                </div>
+                <div class="users-list" id="users-list-container">
+                    <div class="loading-state">Loading aggregated data...</div>
+                </div>
+            </section>
+
+            <!-- Right Side: History Details (Detail) -->
+            <section class="history-section glass-panel">
+                <div class="history-header" id="history-header">
+                    <h2>Charging History</h2>
+                    <p class="subtitle">Select a user from the leaderboard</p>
+                </div>
+                
+                <!-- Detailed Comprehensive Stats -->
+                <div class="detailed-stats-container" id="detailed-stats-container" style="display: none;">
+                    <!-- Filled by JS -->
+                </div>
+
+                <div class="history-content-scroll">
+                    <!-- Monthly Aggregates Section -->
+                    <div class="monthly-aggregates-container" id="monthly-aggregates-container">
+                        <!-- Filled by JS -->
+                    </div>
+
+                    <!-- Raw Sessions Table Container -->
+                    <div class="history-table-container">
+                        <table class="modern-table" id="history-table">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Energy (kWh)</th>
+                                <th>Total Cost (NOK)</th>
+                                <th>Spot Cost</th>
+                                <th>Grid Cost</th>
+                                <th>Usage Cost</th>
+                                <th>Fund Cost</th>
+                                <th>Refund</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-tbody">
+                            <tr class="empty-state-row">
+                                <td colspan="8" class="empty-state">No user selected</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+        </main>
+    </div>
+
+    <script src="{% static 'car_charging/js/user_costs.js' %}"></script>
+</body>
+</html>
