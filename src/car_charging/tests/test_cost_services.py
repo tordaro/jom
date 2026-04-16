@@ -1,4 +1,6 @@
 import uuid
+from unittest.mock import patch
+
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from decimal import Decimal
@@ -241,6 +243,24 @@ class CostServicesTestCase(TestCase):
 
         self.assertEqual(CostDetails.objects.count(), 1)
         self.assertEqual(cost_details.grid_cost, self.energy_details.energy * Decimal("0.60"))
+
+    def test_existing_cost_details_are_loaded_in_bulk(self):
+        second_timestamp = make_aware(datetime(2025, 1, 1, 11))
+        second_detail = EnergyDetails.objects.create(
+            charging_session=self.charging_session,
+            energy=Decimal("4.2"),
+            timestamp=second_timestamp,
+        )
+        SpotPrice.objects.create(
+            nok_pr_kwh=Decimal("0.97"),
+            start_time=second_timestamp,
+            price_area=4,
+        )
+
+        with patch.object(CostDetails.objects, "in_bulk", wraps=CostDetails.objects.in_bulk) as mock_in_bulk:
+            create_cost_details()
+
+        mock_in_bulk.assert_called_once_with([self.energy_details.id, second_detail.id])
 
     def test_no_spot_price(self):
         """

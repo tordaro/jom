@@ -68,7 +68,9 @@ def create_cost_details(from_date: datetime | None = None, to_date: datetime | N
         energy_details = energy_details.filter(timestamp__gte=from_date)
     if to_date:
         energy_details = energy_details.filter(timestamp__lt=to_date)
-    energy_details = energy_details.order_by("timestamp", "id")
+    energy_details = list(energy_details.order_by("timestamp", "id"))
+
+    existing_cost_details = CostDetails.objects.in_bulk([energy_detail.id for energy_detail in energy_details])
 
     spot_price_cache: dict[tuple[int, datetime], SpotPrice | None] = {}
     grid_price_cache: dict[date, GridPrice | None] = {}
@@ -81,7 +83,7 @@ def create_cost_details(from_date: datetime | None = None, to_date: datetime | N
         usage_price = _get_usage_price(energy_detail, usage_price_cache)
         refund_price = _get_refund_price(energy_detail, refund_price_cache)
 
-        cost_detail = CostDetails.objects.filter(energy_detail=energy_detail).first()
+        cost_detail = existing_cost_details.get(energy_detail.id)
         if cost_detail is None:
             CostDetails.objects.create(
                 energy_detail=energy_detail,
